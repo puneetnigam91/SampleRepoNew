@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:i="http://www.springframework.org/schema/integration"
+	xmlns:file="http://www.springframework.org/schema/integration/file"
+	xmlns:context="http://www.springframework.org/schema/context" xmlns:p="http://www.springframework.org/schema/p"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans
+            http://www.springframework.org/schema/beans/spring-beans.xsd
+            http://www.springframework.org/schema/integration
+            http://www.springframework.org/schema/integration/spring-integration.xsd
+            http://www.springframework.org/schema/integration/file
+            http://www.springframework.org/schema/integration/file/spring-integration-file.xsd
+            http://www.springframework.org/schema/context 
+            http://www.springframework.org/schema/context/spring-context.xsd">
+
+	<context:component-scan base-package="myprj" />
+	<bean
+		class="org.springframework.web.servlet.view.InternalResourceViewResolver">
+		<property name="prefix" value="/WEB-INF/JSP/" />
+		<property name="suffix" value=".jsp" />
+	</bean>
+
+	<!-- <context:property-placeholder location="application.properties"/> -->
+
+	<bean id="application"
+		class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer">
+		<property name="location" value="classpath:filelocation.properties" />
+	</bean>
+
+	<file:inbound-channel-adapter id="filesIn" directory="${INPUT.DIRECTORY}" 
+		filter="onlyTextFiles" auto-startup="true"> <i:poller id="poller" fixed-delay="5" />
+		</file:inbound-channel-adapter>
+
+	<file:inbound-channel-adapter channel="choose"
+		directory="${INPUT.DIRECTORY}" filter="onlyTextFiles"
+		filename-pattern="*.txt">
+		<i:poller id="poller" fixed-delay="5000"
+			max-messages-per-poll="2" />
+	</file:inbound-channel-adapter>
+
+	<i:router input-channel="choose" expression="payload.length() == 0">
+		<i:mapping value="true" channel="reject" />
+		<i:mapping value="false" channel="filesIn" />
+	</i:router>
+
+	<i:channel id="reject" />
+
+
+	<i:service-activator input-channel="reject"
+		output-channel="stdout"
+		expression="payload.renameTo(new java.io.File('/tmp/rejected/' + payload.name))" />
+	<bean id="onlyTextFiles"
+		class="org.springframework.integration.file.config.FileListFilterFactoryBean"
+		p:filenamePattern="*.txt" />
+
+	<file:file-to-string-transformer
+		input-channel="choose" output-channel="output" charset="UTF-8" />
+
+	<i:channel id="choose" />
+
+	<i:router input-channel="output" ref="router" method="handleFile" />
+
+	<bean id="router" class="myprj.Router">
+	</bean>
+
+
+
+	<i:service-activator input-channel="successChannel"
+		ref="messageProcesser" method="processMessage" output-channel="writeOutputChannel" />
+
+	<bean id="messageProcesser" class="myprj.MessageProcessor">
+	</bean>
+
+	<file:outbound-channel-adapter id="writeOutputChannel"
+		directory="${OUTPUT.DIRECTORY}" auto-create-directory="true"
+		filename-generator="fileNameGenerator" />
+	<bean id="fileNameGenerator" class="myprj.ProcessedFileNameGenerator"></bean>
+
+	<file:outbound-channel-adapter id="problemChannel"
+		directory="${ERROR.DIRECTORY}" auto-create-directory="true" />
+
+	<!-- testing -->
+
+</beans>
